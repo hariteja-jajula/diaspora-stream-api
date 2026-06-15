@@ -78,6 +78,6 @@ install (FILES "${CMAKE_CURRENT_BINARY_DIR}/diaspora-stream-api-config.cmake"
          DESTINATION ${diaspora-stream-api-pkg} )
 install (DIRECTORY ../include/diaspora
          DESTINATION include
-         FILES_MATCHING PATTERN "*.hpp")
+         FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 install (FILES "${CMAKE_CURRENT_BINARY_DIR}/diaspora-stream-api.pc"
          DESTINATION "lib/pkgconfig/")

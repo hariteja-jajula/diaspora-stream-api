@@ -41,8 +41,11 @@ set_target_properties (diaspora-c
     SOVERSION ${DIASPORA_STREAM_API_VERSION_MAJOR})
 
 # pkg-config file for downstream pure-C consumers (Darshan, etc.).
-# DEST_DIR and DIASPORA_API_VERSION are already set in the parent
-# src/CMakeLists.txt at the point this subdirectory is processed.
+# Set DEST_DIR and DIASPORA_API_VERSION locally -- CMake parent-scope
+# variables don't auto-propagate into add_subdirectory'd scopes for
+# configure_file substitution. Mirror what src/CMakeLists.txt does.
+set (DEST_DIR "${CMAKE_INSTALL_PREFIX}")
+set (DIASPORA_API_VERSION "${DIASPORA_STREAM_API_VERSION}")
 configure_file ("diaspora-c.pc.in" "diaspora-c.pc" @ONLY)
 
 # Install: library, header (already covered by parent's
