@@ -129,3 +129,8 @@ set_property (TEST DiasporaCtlForwardTest PROPERTY
               "PATH=$ENV{PATH}:${CMAKE_BINARY_DIR}/bin"
               "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:$ENV{LD_LIBRARY_PATH}")
 set_property (TEST DiasporaCtlForwardTest PROPERTY TIMEOUT 120)
+
+# C bindings test (pure C); only included when ENABLE_C_API=ON.
+if (ENABLE_C_API)
+    add_subdirectory (c_bindings)
+endif ()

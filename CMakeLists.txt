@@ -33,6 +33,7 @@ option (ENABLE_TESTS     "Build tests" OFF)
 option (ENABLE_COVERAGE  "Build with coverage" OFF)
 option (ENABLE_PYTHON    "Build the Python module" OFF)
 option (ENABLE_BENCHMARKS "Build benchmarks" OFF)
+option (ENABLE_C_API     "Build the pure-C bindings (diaspora-c)" OFF)
 
 if (ENABLE_TESTS)
     set (ENABLE_BENCHMARKS ON)
@@ -141,6 +142,9 @@ if (ENABLE_PYTHON)
 endif ()
 
 add_subdirectory (src)
+if (ENABLE_C_API)
+    add_subdirectory (src/c)
+endif ()
 add_subdirectory (bin)
 add_subdirectory (docs/_code)
 

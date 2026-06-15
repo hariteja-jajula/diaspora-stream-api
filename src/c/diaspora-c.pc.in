@@ -1,0 +1,12 @@
+prefix=@DEST_DIR@
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: diaspora-c
+Description: C bindings for the Diaspora Stream API (producer side)
+Version: @DIASPORA_API_VERSION@
+Requires: diaspora-stream-api
+
+Libs: -L${libdir} -ldiaspora-c
+Cflags: -I${includedir}
