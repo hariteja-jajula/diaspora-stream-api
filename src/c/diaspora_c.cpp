@@ -1,3 +1,9 @@
+/*
+ * (C) 2026 The University of Chicago
+ *
+ * See COPYRIGHT in top-level directory.
+ */
+
 /* diaspora_c.cpp — C bindings for the Diaspora Stream API (producer side).
  *
  * See diaspora_c.h for the public contract. Rule enforced throughout: no

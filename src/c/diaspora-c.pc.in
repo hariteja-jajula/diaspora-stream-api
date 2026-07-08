@@ -6,7 +6,7 @@ includedir=${prefix}/include
 Name: diaspora-c
 Description: C bindings for the Diaspora Stream API (producer side)
 Version: @DIASPORA_API_VERSION@
-Requires: diaspora-stream-api
+Requires.private: diaspora-stream-api
 
 Libs: -L${libdir} -ldiaspora-c
 Cflags: -I${includedir}

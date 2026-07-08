@@ -1,3 +1,9 @@
+/*
+ * (C) 2026 The University of Chicago
+ *
+ * See COPYRIGHT in top-level directory.
+ */
+
 /* diaspora_c.h — C bindings for the Diaspora Stream API (producer side).
  *
  * STATUS: EXPERIMENTAL (v0, pre-1.0). ABI may change between minor releases.
@@ -26,8 +32,8 @@
  *   diaspora_topic_destroy(t);
  *   diaspora_driver_destroy(d);
  */
-#ifndef DIASPORA_C_H
-#define DIASPORA_C_H
+#ifndef DIASPORA_API_C_H
+#define DIASPORA_API_C_H
 
 #include <stddef.h>
 
@@ -121,4 +127,4 @@ int diaspora_producer_flush_timeout(diaspora_producer_t* p, int timeout_ms);
 } /* extern "C" */
 #endif
 
-#endif /* DIASPORA_C_H */
+#endif /* DIASPORA_API_C_H */
