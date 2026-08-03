@@ -20,14 +20,20 @@
 #include <diaspora/DataView.hpp>
 #include <diaspora/BatchParams.hpp>
 #include <diaspora/Ordering.hpp>
+#include <diaspora/ThreadPool.hpp>
+
+#include <cstdlib>
+#include <cstring>
 
 #include <chrono>
 #include <exception>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -63,6 +69,11 @@ struct diaspora_producer {
     std::mutex mtx;
     std::optional<diaspora::Future<std::optional<diaspora::EventID>>> oldest;
     std::chrono::steady_clock::time_point oldest_t0{};
+    /* When a dedicated sender ThreadPool exists (DIASPORA_C_SENDER_THREADS>0),
+     * route push() through it so the thallium::mutex it takes runs on an
+     * Argobots ES, never on the caller's raw pthread (the ABT-context bug). */
+    bool abt_safe_push{false};
+    diaspora::ThreadPool pool{};
 };
 
 extern "C" diaspora_driver_t*
@@ -109,10 +120,36 @@ diaspora_producer_create(diaspora_topic_t* t,
             ? diaspora::Ordering::Strict
             : diaspora::Ordering::Loose;
         std::string_view name{producer_name ? producer_name : "diaspora-c"};
+        /* By default the producer's sender loop runs on the driver's default
+         * thread pool, which for Mofka is the *progress pool* -- i.e. the same
+         * execution stream that busy-polls the NIC. That couples the sender to
+         * the progress loop. Mofka's own long-running example (work.py) instead
+         * passes producer(thread_pool=ThreadPool(1)), giving the sender its own
+         * dedicated xstream. Reproduce that here when DIASPORA_C_SENDER_THREADS>0:
+         * makeThreadPool(N) builds a dedicated Argobots xstream (basic_wait) for
+         * the sender, decoupling it from the progress ES. Default 0 = unchanged. */
+        long sender_threads = 0;
+        { const char* e = std::getenv("DIASPORA_C_SENDER_THREADS");
+          if (e && *e) sender_threads = std::strtol(e, nullptr, 10);
+          if (sender_threads < 0) sender_threads = 0; }
+
         /* producer() takes options by type, in any order, filling omitted
          * ones with the library's own defaults. Pass MaxNumBatches only when
          * the caller specifies it, so 0 tracks the library default rather
          * than a value copied here. */
+        if (sender_threads > 0) {
+            auto tp = t->impl.driver().makeThreadPool(
+                diaspora::ThreadCount{(std::size_t)sender_threads});
+            auto prod = (max_num_batches == 0)
+                ? t->impl.producer(name, bs, tp, ord)
+                : t->impl.producer(name, bs, diaspora::MaxNumBatches{max_num_batches}, tp, ord);
+            auto* h = new diaspora_producer{std::move(prod)};
+            /* Part 1: record the ABT pool so push() can dispatch onto it,
+             * keeping every thallium::mutex off the caller's raw pthread. */
+            h->pool = tp;
+            h->abt_safe_push = true;
+            return h;
+        }
         auto prod = (max_num_batches == 0)
             ? t->impl.producer(name, bs, ord)
             : t->impl.producer(name, bs, diaspora::MaxNumBatches{max_num_batches}, ord);
@@ -141,6 +178,41 @@ diaspora_producer_push(diaspora_producer_t* p,
                 p->oldest_t0 = std::chrono::steady_clock::now();
             }
         };
+        /* Part 1 (ABT-context fix): MofkaProducer::push() takes a thallium::mutex
+         * (== ABT_mutex). Taking an Argobots mutex from a raw pthread (the Darshan
+         * connector's drain thread is pthread_create'd) corrupts margo's scheduler
+         * -> mid-run wedge + pegged core. When a dedicated sender pool exists, run
+         * the push as an Argobots ULT ON that pool: pushWork() from an external
+         * thread is only a pool enqueue (an Argobots-supported external-thread op),
+         * and the mutex-taking push() then executes inside the ULT on a valid ES. */
+        if (p->abt_safe_push) {
+            /* Own copies so the ULT is self-contained (caller's buffers may be
+             * reused/freed after we return). Fire-and-forget: async semantics. */
+            auto md_copy   = md;
+            auto data_copy = (data && data_len > 0)
+                ? std::make_shared<std::vector<char>>(
+                      static_cast<const char*>(data),
+                      static_cast<const char*>(data) + data_len)
+                : std::shared_ptr<std::vector<char>>{};
+            p->pool.pushWork([p, md_copy, data_copy]() {
+                try {
+                    auto adopt = [p](auto&& fut) {
+                        std::lock_guard<std::mutex> lk(p->mtx);
+                        if (!p->oldest) {
+                            p->oldest = std::forward<decltype(fut)>(fut);
+                            p->oldest_t0 = std::chrono::steady_clock::now();
+                        }
+                    };
+                    if (data_copy) {
+                        diaspora::DataView dv{data_copy->data(), data_copy->size()};
+                        adopt(p->impl.push(md_copy, dv));
+                    } else {
+                        adopt(p->impl.push(md_copy));
+                    }
+                } catch (...) { /* async: nowhere to report; drop */ }
+            });
+            return DIASPORA_C_OK;
+        }
         if (data && data_len > 0) {
             diaspora::DataView dv{const_cast<void*>(data), data_len};
             adopt(p->impl.push(md, dv));
