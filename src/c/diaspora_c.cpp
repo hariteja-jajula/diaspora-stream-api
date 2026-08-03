@@ -20,6 +20,7 @@
 #include <diaspora/DataView.hpp>
 #include <diaspora/BatchParams.hpp>
 #include <diaspora/Ordering.hpp>
+#include <diaspora/ThreadPool.hpp>
 
 #include <chrono>
 #include <exception>
@@ -100,7 +101,24 @@ diaspora_producer_create(diaspora_topic_t* t,
                          size_t batch_size,
                          size_t max_num_batches,
                          diaspora_c_ordering_t ordering) {
+    /* thread_count==0 => driver default pool (unchanged legacy behavior). */
+    return diaspora_producer_create_ex(nullptr, t, producer_name,
+                                       batch_size, max_num_batches, ordering, 0);
+}
+
+extern "C" diaspora_producer_t*
+diaspora_producer_create_ex(diaspora_driver_t* d,
+                            diaspora_topic_t* t,
+                            const char* producer_name,
+                            size_t batch_size,
+                            size_t max_num_batches,
+                            diaspora_c_ordering_t ordering,
+                            size_t thread_count) {
     if (!t) { set_msg("producer_create: topic is NULL"); return nullptr; }
+    if (thread_count > 0 && !d) {
+        set_msg("producer_create_ex: thread_count>0 requires a non-NULL driver");
+        return nullptr;
+    }
     try {
         diaspora::BatchSize bs = (batch_size == 0)
             ? diaspora::BatchSize::Adaptive()
@@ -109,13 +127,27 @@ diaspora_producer_create(diaspora_topic_t* t,
             ? diaspora::Ordering::Strict
             : diaspora::Ordering::Loose;
         std::string_view name{producer_name ? producer_name : "diaspora-c"};
-        /* producer() takes options by type, in any order, filling omitted
-         * ones with the library's own defaults. Pass MaxNumBatches only when
-         * the caller specifies it, so 0 tracks the library default rather
-         * than a value copied here. */
-        auto prod = (max_num_batches == 0)
-            ? t->impl.producer(name, bs, ord)
-            : t->impl.producer(name, bs, diaspora::MaxNumBatches{max_num_batches}, ord);
+
+        /* A dedicated pool must be built by the driver: the ThreadPool value type
+         * has a private ctor from impl, and TopicHandle::producer() accepts a
+         * ThreadPool (not a bare ThreadCount). thread_count==0 => omit the
+         * ThreadPool arg so the driver supplies its default (progress) pool. */
+        const bool dedicated = (thread_count > 0);
+        diaspora::ThreadPool tp;
+        if (dedicated)
+            tp = d->impl.makeThreadPool(diaspora::ThreadCount{thread_count});
+
+        /* producer() takes options by type, in any order, filling omitted ones
+         * with library defaults. Pass MaxNumBatches only when specified; pass
+         * ThreadPool only when a dedicated pool was requested. */
+        diaspora::Producer prod =
+            dedicated
+              ? (max_num_batches == 0
+                    ? t->impl.producer(name, bs, tp, ord)
+                    : t->impl.producer(name, bs, diaspora::MaxNumBatches{max_num_batches}, tp, ord))
+              : (max_num_batches == 0
+                    ? t->impl.producer(name, bs, ord)
+                    : t->impl.producer(name, bs, diaspora::MaxNumBatches{max_num_batches}, ord));
         return new diaspora_producer{std::move(prod)};
     } catch (const std::exception& e) { set_err("producer_create", &e); return nullptr; }
       catch (...)                     { set_err("producer_create", nullptr); return nullptr; }

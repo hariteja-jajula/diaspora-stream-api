@@ -90,6 +90,24 @@ diaspora_producer_t* diaspora_producer_create(diaspora_topic_t* t,
                                               size_t batch_size,
                                               size_t max_num_batches,
                                               diaspora_c_ordering_t ordering);
+
+/* Like diaspora_producer_create, but binds the producer's sender to a
+ * DEDICATED thread pool of `thread_count` threads instead of the driver's
+ * default pool. With the mofka driver the default pool IS the margo progress
+ * pool, so the sender ULT (which parks in a blocking send RPC) competes with
+ * network progress and can wedge under broker backpressure. A dedicated pool
+ * of >=1 threads runs the sender on its own Argobots execution stream, so the
+ * blocking RPC yields to that ES while margo progress runs unobstructed.
+ *
+ * thread_count == 0 reproduces the old behavior (driver default = progress pool).
+ * Requires the owning driver handle (makeThreadPool lives on the driver). */
+diaspora_producer_t* diaspora_producer_create_ex(diaspora_driver_t* d,
+                                                 diaspora_topic_t* t,
+                                                 const char* producer_name,
+                                                 size_t batch_size,
+                                                 size_t max_num_batches,
+                                                 diaspora_c_ordering_t ordering,
+                                                 size_t thread_count);
 void diaspora_producer_destroy(diaspora_producer_t* p);
 
 /* Push one event. Fire-and-forget: returns once the event is enqueued in
