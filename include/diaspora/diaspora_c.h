@@ -106,6 +106,15 @@ int diaspora_producer_push(diaspora_producer_t* p,
                            const char* metadata_json,
                            const void* data, size_t data_len);
 
+/* Like diaspora_producer_push, but metadata_json is stored VERBATIM (not parsed):
+ * the bytes are carried as-is and, when the topic uses the "raw" serializer, written
+ * straight to the wire without a parse+dump round-trip. The consumer still receives a
+ * parsed JSON object. metadata_json must already be a well-formed JSON object; it is
+ * not validated here. Same fire-and-forget / buffer-reuse semantics as _push. */
+int diaspora_producer_push_raw(diaspora_producer_t* p,
+                               const char* metadata_json,
+                               const void* data, size_t data_len);
+
 /* Age, in seconds, of the OLDEST push not yet acknowledged by the broker;
  * 0.0 if nothing is pending; -1.0 on internal error. Non-blocking.
  *

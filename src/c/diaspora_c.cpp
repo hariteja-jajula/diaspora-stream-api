@@ -162,14 +162,20 @@ extern "C" void diaspora_producer_destroy(diaspora_producer_t* p) {
     try { delete p; } catch (...) {}
 }
 
-extern "C" int
-diaspora_producer_push(diaspora_producer_t* p,
-                       const char* metadata_json,
-                       const void* data, size_t data_len) {
+/* Shared push implementation. parse_json controls how metadata_json is turned into
+ * a diaspora::Metadata: true (diaspora_producer_push) parses the text into a JSON
+ * object; false (diaspora_producer_push_raw) stores the text verbatim as a JSON
+ * string node so the "raw" serializer can emit it to the wire without re-dumping it,
+ * skipping the redundant parse+dump round-trip. Everything else is identical. */
+static int
+diaspora_producer_push_impl(diaspora_producer_t* p,
+                            const char* metadata_json,
+                            const void* data, size_t data_len,
+                            bool parse_json) {
     if (!p)             { set_msg("push: producer is NULL"); return DIASPORA_C_ERR; }
     if (!metadata_json) { set_msg("push: metadata_json is NULL"); return DIASPORA_C_ERR; }
     try {
-        diaspora::Metadata md{metadata_json};
+        diaspora::Metadata md{metadata_json, parse_json};
         /* Track only the oldest still-unacked push, for oldest_pending_age(). */
         auto adopt = [p](auto&& fut) {
             std::lock_guard<std::mutex> lk(p->mtx);
@@ -222,6 +228,25 @@ diaspora_producer_push(diaspora_producer_t* p,
         return DIASPORA_C_OK;
     } catch (const std::exception& e) { set_err("push", &e); return DIASPORA_C_ERR; }
       catch (...)                     { set_err("push", nullptr); return DIASPORA_C_ERR; }
+}
+
+extern "C" int
+diaspora_producer_push(diaspora_producer_t* p,
+                       const char* metadata_json,
+                       const void* data, size_t data_len) {
+    return diaspora_producer_push_impl(p, metadata_json, data, data_len,
+                                       /*parse_json=*/true);
+}
+
+/* Like diaspora_producer_push, but stores metadata_json verbatim (parse=false).
+ * Pair with a topic created using the "raw" serializer so the bytes reach the wire
+ * without a parse+dump round-trip; the consumer still deserializes to a real object. */
+extern "C" int
+diaspora_producer_push_raw(diaspora_producer_t* p,
+                           const char* metadata_json,
+                           const void* data, size_t data_len) {
+    return diaspora_producer_push_impl(p, metadata_json, data, data_len,
+                                       /*parse_json=*/false);
 }
 
 extern "C" double

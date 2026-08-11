@@ -9,11 +9,13 @@
 #include "PimplUtil.hpp"
 #include "DefaultSerializer.hpp"
 #include "SchemaSerializer.hpp"
+#include "RawSerializer.hpp"
 
 namespace diaspora {
 
 DIASPORA_REGISTER_SERIALIZER(diaspora, default, DefaultSerializer);
 DIASPORA_REGISTER_SERIALIZER(diaspora, schema, SchemaSerializer);
+DIASPORA_REGISTER_SERIALIZER(diaspora, raw, RawSerializer);
 
 Serializer::Serializer()
 : self(std::make_shared<DefaultSerializer>()) {}
